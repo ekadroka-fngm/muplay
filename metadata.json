@@ -1,0 +1,6 @@
+{
+  "name": "Muplay",
+  "description": "Pemutar musik offline pribadi dengan antarmuka extreme brutalism, visualizer EQ 10-band, dukungan lirik tersinkronisasi, dan pengelolaan file audio lokal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

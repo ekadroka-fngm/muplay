@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: 'Archivo Black', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --color-mu-bg: #09090C;
+  --color-mu-surface: #13131A;
+  --color-mu-surface-raised: #1C1C26;
+  --color-mu-text: #F0EFEA;
+  --color-mu-muted: #A3A1AD;
+  --color-mu-border: #454450;
+  --color-mu-accent: #D7FF3F;
+  --color-mu-accent-sec: #9B72FF;
+  --color-mu-danger: #FF5A63;
+}
+
+:root {
+  --bg: #09090C;
+  --surface: #13131A;
+  --surface-raised: #1C1C26;
+  --text-primary: #F0EFEA;
+  --text-muted: #A3A1AD;
+  --border: #454450;
+  --accent: #D7FF3F;
+  --accent-sec: #9B72FF;
+  --danger: #FF5A63;
+}
+
+:root[data-theme="light"] {
+  --bg: #F4F3EE;
+  --surface: #E8E6DF;
+  --surface-raised: #DDD9D0;
+  --text-primary: #0C0C0F;
+  --text-muted: #646270;
+  --border: #2A2933;
+  --accent: #5D9400;
+  --accent-sec: #7948EA;
+  --danger: #E02834;
+}
+
+body {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  user-select: none;
+}
+
+/* Sharp brutalist buttons and borders */
+.brutalist-border {
+  border: 1px solid var(--border);
+}
+
+.brutalist-border-thick {
+  border: 2px solid var(--border);
+}
+
+/* Custom scrollbars brutalist */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
