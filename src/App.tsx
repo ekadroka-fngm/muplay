@@ -48,7 +48,6 @@ import { EqualizerView } from './components/EqualizerView';
 import { SettingsView } from './components/SettingsView';
 import { TrackDetailModal } from './components/TrackDetailModal';
 import { AddToPlaylistModal } from './components/AddToPlaylistModal';
-import { LinkLyricsModal } from './components/LinkLyricsModal';
 
 export default function App() {
   // Navigation State
@@ -90,7 +89,6 @@ export default function App() {
   // Modals
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<Track | null>(null);
-  const [attachLyricsTrack, setAttachLyricsTrack] = useState<Track | null>(null);
 
   const currentTrack: Track | null = queue[currentQueueIndex]?.track || tracks[0] || null;
 
@@ -153,12 +151,22 @@ export default function App() {
           audioEngine.setTrackSource(demos[0].blobUrl);
         }
       } else {
-        // Restore existing tracks
-        setTracks(loadedTracks);
+        // Restore existing tracks and regenerate object URLs for stored blobs
+        const restoredTracks = loadedTracks.map((track) => {
+          if (track.blob) {
+            return {
+              ...track,
+              blobUrl: URL.createObjectURL(track.blob),
+            };
+          }
+          return track;
+        });
+
+        setTracks(restoredTracks);
         setPlaylists(loadedPlaylists);
 
         // Populate initial queue
-        const initialQueue: QueueItem[] = loadedTracks.map((track) => ({
+        const initialQueue: QueueItem[] = restoredTracks.map((track) => ({
           id: `q_${generateId()}`,
           trackId: track.id,
           track,
@@ -166,8 +174,8 @@ export default function App() {
         setQueue(initialQueue);
         setCurrentQueueIndex(0);
 
-        if (loadedTracks[0].blobUrl) {
-          audioEngine.setTrackSource(loadedTracks[0].blobUrl);
+        if (restoredTracks[0]?.blobUrl) {
+          audioEngine.setTrackSource(restoredTracks[0].blobUrl);
         }
       }
     }
@@ -307,11 +315,23 @@ export default function App() {
     }
   }, [queue, currentQueueIndex, settings.repeatMode]);
 
-  // Step seek (-10s / +10s) without slider (PRD 7.4)
+  // Step seek and direct scrubber seek
   const handleSeekStep = useCallback((seconds: number) => {
     const newPos = audioEngine.seekStep(seconds);
     setCurrentTime(newPos);
   }, []);
+
+  const handleSeekTo = useCallback(
+    (targetSeconds: number) => {
+      const audio = audioEngine.getAudioElement();
+      if (!audio.src && currentTrack?.blobUrl) {
+        audioEngine.setTrackSource(currentTrack.blobUrl);
+      }
+      const newPos = audioEngine.seekTo(targetSeconds);
+      setCurrentTime(newPos);
+    },
+    [currentTrack]
+  );
 
   const handleVolumeStep = useCallback(
     (delta: number) => {
@@ -458,22 +478,6 @@ export default function App() {
           }
           return q;
         })
-      );
-    },
-    []
-  );
-
-  // Attach Lyrics Handler
-  const handleSaveLyrics = useCallback(
-    async (trackId: string, content: string, fileName?: string) => {
-      const parsed = parseLyrics(content, fileName);
-      await dbSaveLyrics(trackId, parsed);
-
-      setTracks((prev) =>
-        prev.map((t) => (t.id === trackId ? { ...t, lyrics: parsed } : t))
-      );
-      setQueue((prev) =>
-        prev.map((q) => (q.track.id === trackId ? { ...q, track: { ...q.track, lyrics: parsed } } : q))
       );
     },
     []
@@ -835,6 +839,7 @@ export default function App() {
             onNextTrack={handleNextTrack}
             onPrevTrack={handlePrevTrack}
             onSeekStep={handleSeekStep}
+            onSeekTo={handleSeekTo}
             onToggleRepeat={handleToggleRepeat}
             onToggleShuffle={handleToggleShuffle}
             onVolumeStep={handleVolumeStep}
@@ -843,7 +848,6 @@ export default function App() {
             onMoveQueueItem={handleMoveQueueItem}
             onSelectQueueItem={handleSelectQueueItem}
             onUpdateLyricOffset={handleUpdateLyricOffset}
-            onOpenAttachLyrics={(t) => setAttachLyricsTrack(t)}
           />
         )}
 
@@ -856,7 +860,6 @@ export default function App() {
             onAddToQueue={handleAddToQueue}
             onOpenAddToPlaylist={(track) => setAddToPlaylistTrack(track)}
             onOpenDetails={(track) => setDetailTrack(track)}
-            onOpenAttachLyrics={(track) => setAttachLyricsTrack(track)}
             onDeleteTrack={handleDeleteTrack}
             onImportFiles={handleImportFiles}
             isImporting={isImporting}
@@ -926,14 +929,6 @@ export default function App() {
           onClose={() => setAddToPlaylistTrack(null)}
           onAddTrackToPlaylist={handleAddTrackToPlaylist}
           onCreateAndAdd={handleCreateAndAddToPlaylist}
-        />
-      )}
-
-      {attachLyricsTrack && (
-        <LinkLyricsModal
-          track={attachLyricsTrack}
-          onClose={() => setAttachLyricsTrack(null)}
-          onSaveLyrics={handleSaveLyrics}
         />
       )}
     </div>

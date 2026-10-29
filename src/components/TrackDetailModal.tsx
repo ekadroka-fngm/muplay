@@ -2,6 +2,7 @@ import React from 'react';
 import { X, FileAudio, Info, CheckCircle2 } from 'lucide-react';
 import { Track } from '../types/music';
 import { formatBytes, formatDuration } from '../utils/formatters';
+import { getTrackArtwork } from '../utils/artworkCache';
 
 interface TrackDetailModalProps {
   track: Track | null;
@@ -31,9 +32,18 @@ export const TrackDetailModal: React.FC<TrackDetailModalProps> = ({ track, onClo
         </div>
 
         <div className="space-y-4">
-          <div>
-            <div className="text-[10px] font-['IBM_Plex_Mono'] text-[#A3A1AD] uppercase">TITLE</div>
-            <div className="font-['Archivo_Black'] text-xl text-[#F0EFEA]">{track.title}</div>
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 shrink-0 bg-[#09090C] border border-[#454450] overflow-hidden">
+              <img
+                src={getTrackArtwork(track)}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-['IBM_Plex_Mono'] text-[#A3A1AD] uppercase">TITLE</div>
+              <div className="font-['Archivo_Black'] text-xl text-[#F0EFEA] truncate">{track.title}</div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 font-['IBM_Plex_Mono'] text-xs">

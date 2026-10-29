@@ -95,6 +95,13 @@ class AudioEngine {
     return target;
   }
 
+  public seekTo(targetSeconds: number): number {
+    const duration = this.audio.duration || 0;
+    const target = Math.max(0, Math.min(duration || targetSeconds, targetSeconds));
+    this.audio.currentTime = target;
+    return target;
+  }
+
   public setVolume(volume: number, muted: boolean = false): void {
     const vol = Math.max(0, Math.min(1, volume));
     this.audio.volume = muted ? 0 : vol;

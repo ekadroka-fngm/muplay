@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sun,
-  Moon,
   HardDrive,
   Cpu,
   Keyboard,
@@ -57,76 +55,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Section 1: Appearance & Theme (PRD 4.1, FR-14) */}
-        <div className="border-2 border-[#454450] bg-[#13131A] p-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#454450] pb-2">
-            <Sun className="w-4 h-4 text-[#D7FF3F]" />
-            <h3 className="font-['Archivo_Black'] text-sm tracking-wider text-[#F0EFEA]">
-              INTERFACE THEME
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => onUpdateSettings({ theme: 'dark' })}
-              className={`p-3 border text-left transition-all ${
-                settings.theme === 'dark'
-                  ? 'bg-[#1C1C26] border-[#D7FF3F] text-[#D7FF3F] shadow-[2px_2px_0px_0px_#454450]'
-                  : 'bg-[#09090C] border-[#454450] text-[#A3A1AD] hover:border-[#D7FF3F]'
-              }`}
-            >
-              <div className="flex items-center gap-2 font-['Space_Grotesk'] font-bold text-xs">
-                <Moon className="w-4 h-4" />
-                <span>EXTREME DARK</span>
-              </div>
-              <div className="font-['IBM_Plex_Mono'] text-[10px] text-[#A3A1AD] mt-1">
-                DEFAULT INDUSTRIAL
-              </div>
-            </button>
-
-            <button
-              onClick={() => onUpdateSettings({ theme: 'light' })}
-              className={`p-3 border text-left transition-all ${
-                settings.theme === 'light'
-                  ? 'bg-[#1C1C26] border-[#D7FF3F] text-[#D7FF3F] shadow-[2px_2px_0px_0px_#454450]'
-                  : 'bg-[#09090C] border-[#454450] text-[#A3A1AD] hover:border-[#D7FF3F]'
-              }`}
-            >
-              <div className="flex items-center gap-2 font-['Space_Grotesk'] font-bold text-xs">
-                <Sun className="w-4 h-4" />
-                <span>BRUTAL LIGHT</span>
-              </div>
-              <div className="font-['IBM_Plex_Mono'] text-[10px] text-[#A3A1AD] mt-1">
-                HIGH CONTRAST MONO
-              </div>
-            </button>
-          </div>
-
-          {/* Reduced Motion Toggle (PRD 5.3) */}
-          <div className="flex items-center justify-between pt-2 border-t border-[#454450]/60">
-            <div>
-              <div className="font-['Space_Grotesk'] text-xs font-bold text-[#F0EFEA]">
-                REDUCED MOTION MODE
-              </div>
-              <div className="font-['IBM_Plex_Mono'] text-[10px] text-[#A3A1AD]">
-                REDUCE INTENSIVE TRANSITIONS
-              </div>
-            </div>
-
-            <button
-              onClick={() => onUpdateSettings({ reducedMotion: !settings.reducedMotion })}
-              className={`px-3 py-1.5 border font-['IBM_Plex_Mono'] text-xs font-bold ${
-                settings.reducedMotion
-                  ? 'bg-[#D7FF3F] text-black border-[#D7FF3F]'
-                  : 'bg-[#09090C] text-[#A3A1AD] border-[#454450]'
-              }`}
-            >
-              {settings.reducedMotion ? 'ENABLED' : 'OFF'}
-            </button>
-          </div>
-        </div>
-
-        {/* Section 2: Storage Modes (PRD 12.2, FR-16) */}
+        {/* Section 1: Storage Modes (PRD 12.2, FR-16) */}
         <div className="border-2 border-[#454450] bg-[#13131A] p-5 space-y-4">
           <div className="flex items-center gap-2 border-b border-[#454450] pb-2">
             <HardDrive className="w-4 h-4 text-[#D7FF3F]" />
@@ -204,7 +133,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Section 3: Audio Engine Status (PRD 14.2) */}
+        {/* Section 2: Audio Engine Status & Preferences */}
         <div className="border-2 border-[#454450] bg-[#13131A] p-5 space-y-4">
           <div className="flex items-center gap-2 border-b border-[#454450] pb-2">
             <Cpu className="w-4 h-4 text-[#D7FF3F]" />
@@ -232,6 +161,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-[#A3A1AD]">NO STREAMING GUARANTEE:</span>
               <span className="text-[#D7FF3F] font-bold">100% AIRGAPPED LOCAL</span>
             </div>
+          </div>
+
+          {/* Reduced Motion Toggle (PRD 5.3) */}
+          <div className="flex items-center justify-between pt-2 border-t border-[#454450]/60">
+            <div>
+              <div className="font-['Space_Grotesk'] text-xs font-bold text-[#F0EFEA]">
+                REDUCED MOTION MODE
+              </div>
+              <div className="font-['IBM_Plex_Mono'] text-[10px] text-[#A3A1AD]">
+                REDUCE INTENSIVE TRANSITIONS
+              </div>
+            </div>
+
+            <button
+              onClick={() => onUpdateSettings({ reducedMotion: !settings.reducedMotion })}
+              className={`px-3 py-1.5 border font-['IBM_Plex_Mono'] text-xs font-bold ${
+                settings.reducedMotion
+                  ? 'bg-[#D7FF3F] text-black border-[#D7FF3F]'
+                  : 'bg-[#09090C] text-[#A3A1AD] border-[#454450]'
+              }`}
+            >
+              {settings.reducedMotion ? 'ENABLED' : 'OFF'}
+            </button>
           </div>
         </div>
 

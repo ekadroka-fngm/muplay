@@ -6,7 +6,6 @@ import {
   Play,
   ListPlus,
   Plus,
-  FileText,
   Info,
   Trash2,
   FileAudio,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Track } from '../types/music';
 import { formatDuration, formatBytes } from '../utils/formatters';
+import { getTrackArtwork } from '../utils/artworkCache';
 
 interface LibraryViewProps {
   tracks: Track[];
@@ -26,7 +26,6 @@ interface LibraryViewProps {
   onAddToQueue: (track: Track, playNext?: boolean) => void;
   onOpenAddToPlaylist: (track: Track) => void;
   onOpenDetails: (track: Track) => void;
-  onOpenAttachLyrics: (track: Track) => void;
   onDeleteTrack: (trackId: string) => void;
   onImportFiles: (files: FileList | File[]) => Promise<void>;
   isImporting: boolean;
@@ -43,7 +42,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onAddToQueue,
   onOpenAddToPlaylist,
   onOpenDetails,
-  onOpenAttachLyrics,
   onDeleteTrack,
   onImportFiles,
   isImporting,
@@ -282,15 +280,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     <Play className={`w-3.5 h-3.5 fill-current ${isCurrent && isPlaying ? 'scale-110' : ''}`} />
                   </button>
 
-                  {/* Artwork thumbnail or format icon */}
+                  {/* Artwork thumbnail from metadata or cache */}
                   <div className="w-8 h-8 shrink-0 bg-[#09090C] border border-[#454450] overflow-hidden flex items-center justify-center">
-                    {track.artworkUrl ? (
-                      <img src={track.artworkUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="font-['IBM_Plex_Mono'] text-[9px] font-bold text-[#A3A1AD]">
-                        {track.format}
-                      </span>
-                    )}
+                    <img
+                      src={getTrackArtwork(track)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   </div>
 
                   {/* Title and Artist: strictly 1 row, truncated with ellipsis, NO wrap (PRD 8.1, 8.2) */}
@@ -334,18 +330,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     aria-label={`Add ${track.title} to playlist`}
                   >
                     <Plus className="w-4 h-4" />
-                  </button>
-
-                  {/* Lyrics modal */}
-                  <button
-                    onClick={() => onOpenAttachLyrics(track)}
-                    className={`p-1.5 border border-transparent hover:border-[#454450] hover:bg-[#09090C] ${
-                      track.lyrics ? 'text-[#D7FF3F]' : 'text-[#A3A1AD] hover:text-[#F0EFEA]'
-                    }`}
-                    title={track.lyrics ? 'Lyrics attached' : 'Attach lyrics (.lrc / .txt)'}
-                    aria-label={`Manage lyrics for ${track.title}`}
-                  >
-                    <FileText className="w-4 h-4" />
                   </button>
 
                   {/* File Metadata Details */}

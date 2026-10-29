@@ -1,4 +1,5 @@
 import { Track } from '../types/music';
+import { getTrackArtwork } from './artworkCache';
 
 /**
  * Extracts basic ID3 tags from buffer slice if available
@@ -75,20 +76,31 @@ function parseId3Basic(buffer: ArrayBuffer): { title?: string; artist?: string; 
           // Attached picture
           try {
             const picSlice = new Uint8Array(buffer, frameDataOffset, frameSize);
-            // Search for image/jpeg or image/png
-            let mimeEnd = 0;
-            for (let i = 1; i < Math.min(picSlice.length, 64); i++) {
-              if (picSlice[i] === 0) {
-                mimeEnd = i;
+            // Search for magic bytes for JPEG (0xFF 0xD8 0xFF) or PNG (0x89 0x50 0x4E 0x47)
+            let imgStart = -1;
+            let mimeType = 'image/jpeg';
+
+            for (let i = 0; i < Math.min(picSlice.length - 4, 256); i++) {
+              if (picSlice[i] === 0xff && picSlice[i + 1] === 0xd8 && picSlice[i + 2] === 0xff) {
+                imgStart = i;
+                mimeType = 'image/jpeg';
+                break;
+              }
+              if (
+                picSlice[i] === 0x89 &&
+                picSlice[i + 1] === 0x50 &&
+                picSlice[i + 2] === 0x4e &&
+                picSlice[i + 3] === 0x47
+              ) {
+                imgStart = i;
+                mimeType = 'image/png';
                 break;
               }
             }
-            if (mimeEnd > 0) {
-              const picDataStart = mimeEnd + 3; // skip mime, picType, description
-              if (picDataStart < picSlice.length) {
-                const imgBlob = new Blob([picSlice.subarray(picDataStart)], { type: 'image/jpeg' });
-                artworkUrl = URL.createObjectURL(imgBlob);
-              }
+
+            if (imgStart >= 0) {
+              const imgBlob = new Blob([picSlice.subarray(imgStart)], { type: mimeType });
+              artworkUrl = URL.createObjectURL(imgBlob);
             }
           } catch {
             // artwork extraction failure is non-fatal
@@ -207,8 +219,12 @@ export async function parseLocalAudioFile(
     bitrate = `${kbps} kbps`;
   }
 
+  const trackId = `track_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const finalArtworkUrl =
+    tagInfo.artworkUrl || getTrackArtwork({ id: trackId, title, artist, format });
+
   const track: Track = {
-    id: `track_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: trackId,
     title,
     artist,
     album,
@@ -221,7 +237,7 @@ export async function parseLocalAudioFile(
     fileSize: file.size,
     blobUrl,
     blob: storageMode === 'copied' ? file : undefined,
-    artworkUrl: tagInfo.artworkUrl,
+    artworkUrl: finalArtworkUrl,
     storageMode,
     addedAt: Date.now(),
   };

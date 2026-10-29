@@ -5,8 +5,6 @@ import {
   ListMusic,
   Sliders,
   Settings,
-  Sun,
-  Moon,
   Volume2,
   X,
   Music2,
@@ -21,8 +19,8 @@ interface SidebarProps {
   trackCount: number;
   playlistCount: number;
   isPlaying: boolean;
-  theme: 'dark' | 'light';
-  onToggleTheme: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -152,20 +150,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
-        {/* Bottom Section: Theme Toggle & Architecture Info */}
+        {/* Bottom Section: Theme & Architecture Info */}
         <div className="p-3 border-t-2 border-[#454450] bg-[#13131A] space-y-2">
           <div className="flex items-center justify-between">
             <span className="font-['IBM_Plex_Mono'] text-[11px] text-[#A3A1AD] uppercase">
-              THEME: {theme.toUpperCase()}
+              THEME: BRUTALIST DARK
             </span>
-            <button
-              onClick={onToggleTheme}
-              className="p-1.5 border border-[#454450] text-[#F0EFEA] hover:bg-[#D7FF3F] hover:text-black transition-colors"
-              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-              title="Toggle Dark / Light Theme"
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            <span className="font-['IBM_Plex_Mono'] text-[9px] px-1.5 py-0.5 bg-[#09090C] border border-[#454450] text-[#D7FF3F]">
+              DEFAULT
+            </span>
           </div>
 
           <div className="pt-2 border-t border-[#454450]/60 flex items-center justify-between text-[10px] font-['IBM_Plex_Mono'] text-[#A3A1AD]">

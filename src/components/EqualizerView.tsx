@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef, useId } from 'react';
-import { Sliders, RotateCcw, Power, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Power, RotateCcw, Check } from 'lucide-react';
 import { EqualizerBand } from '../types/music';
 import { EQ_FREQUENCIES, EQ_BAND_LABELS, EQ_PRESETS } from '../utils/equalizerPresets';
-import { audioEngine } from '../audio/audioEngine';
 
 interface EqualizerViewProps {
   bands: EqualizerBand[];
@@ -28,60 +27,59 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
   const [selectedBandIndex, setSelectedBandIndex] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [containerWidth, setContainerWidth] = useState<number>(800);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Measure container width responsively (PRD 10.3)
+  // Initialize responsive width dynamically based on viewport
+  const [containerWidth, setContainerWidth] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      return Math.min(window.innerWidth - 32, 850);
+    }
+    return 360;
+  });
+
+  // Measure container width immediately and on resize (PRD 10.3)
   useEffect(() => {
-    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        const measured = containerRef.current.getBoundingClientRect().width;
+        if (measured > 0) {
+          setContainerWidth(Math.round(measured));
+        }
+      }
+    };
+
+    updateSize();
+    const rafId = requestAnimationFrame(updateSize);
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0) {
-          setContainerWidth(entry.contentRect.width);
+          setContainerWidth(Math.round(entry.contentRect.width));
         }
       }
     });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    window.addEventListener('resize', updateSize);
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
 
-  // Background visualizer animation
-  useEffect(() => {
-    let animId: number;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const render = () => {
-      if (isPlaying) {
-        const data = audioEngine.getVisualizerData();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const barWidth = canvas.width / data.length;
-        ctx.fillStyle = 'rgba(215, 255, 63, 0.08)';
-
-        for (let i = 0; i < data.length; i++) {
-          const val = data[i] / 255;
-          const barHeight = val * canvas.height;
-          ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth - 1, barHeight);
-        }
-      } else {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      animId = requestAnimationFrame(render);
-    };
-
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
-  }, [isPlaying]);
-
-  // Dimensions for SVG Graph
-  const graphHeight = 280;
-  const paddingX = 40;
-  const paddingY = 30;
-  const usableWidth = Math.max(200, containerWidth - paddingX * 2);
-  const usableHeight = graphHeight - paddingY * 2;
-  const zeroY = paddingY + usableHeight / 2; // 0 dB line
+  // Dimensions for Proportional Responsive SVG Graph (PRD 10.3)
+  const isMobile = containerWidth < 540;
+  const graphHeight = isMobile ? 210 : 270;
+  const paddingX = isMobile ? 22 : 40;
+  const paddingTop = isMobile ? 18 : 28;
+  const paddingBottom = isMobile ? 32 : 36;
+  const usableWidth = Math.max(120, containerWidth - paddingX * 2);
+  const usableHeight = graphHeight - paddingTop - paddingBottom;
+  const zeroY = paddingTop + usableHeight / 2; // 0 dB line
 
   // Gain range: -12 dB to +12 dB
   const minGain = -12;
@@ -91,17 +89,35 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
   const getNodeCoordinates = (index: number, gain: number) => {
     const x = paddingX + (index / (bands.length - 1)) * usableWidth;
     const normalizedGain = (gain - minGain) / (maxGain - minGain); // 0 at -12dB, 1 at +12dB
-    const y = paddingY + usableHeight * (1 - normalizedGain);
+    const y = paddingTop + usableHeight * (1 - normalizedGain);
     return { x, y };
   };
 
-  // Convert y coordinate to gain dB
-  const yToGain = (y: number): number => {
-    const clampedY = Math.max(paddingY, Math.min(paddingY + usableHeight, y));
-    const normalized = 1 - (clampedY - paddingY) / usableHeight;
+  // Convert client pointer position (screen X, Y) to (bandIndex, snappedGain)
+  const getBandAndGainFromPointer = (clientX: number, clientY: number) => {
+    if (!svgRef.current) return null;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
+    // Convert client screen coordinates to exact SVG coordinate space
+    const scaleX = containerWidth / rect.width;
+    const scaleY = graphHeight / rect.height;
+
+    const svgX = (clientX - rect.left) * scaleX;
+    const svgY = (clientY - rect.top) * scaleY;
+
+    // Nearest band by horizontal position
+    const relX = svgX - paddingX;
+    const rawIndex = (relX / usableWidth) * (bands.length - 1);
+    const nearestIndex = Math.max(0, Math.min(bands.length - 1, Math.round(rawIndex)));
+
+    // Gain by vertical position
+    const clampedY = Math.max(paddingTop, Math.min(paddingTop + usableHeight, svgY));
+    const normalized = 1 - (clampedY - paddingTop) / usableHeight;
     const rawGain = minGain + normalized * (maxGain - minGain);
-    // Snap to 0.5 dB
-    return Math.round(rawGain * 2) / 2;
+    const snappedGain = Math.round(rawGain * 2) / 2;
+
+    return { index: nearestIndex, gain: snappedGain };
   };
 
   // Construct SVG spline path for response curve
@@ -124,21 +140,29 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
     }
   }
 
-  // Handle pointer interactions on SVG graph
-  const handlePointerDown = (index: number) => {
-    setSelectedBandIndex(index);
-    setIsDragging(true);
+  // Pointer interactions on SVG (touch and mouse)
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const target = getBandAndGainFromPointer(e.clientX, e.clientY);
+    if (target) {
+      setSelectedBandIndex(target.index);
+      setIsDragging(true);
+      onUpdateBandGain(target.index, target.gain);
+    }
   };
 
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!isDragging || selectedBandIndex === null) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clientY = e.clientY - rect.top;
-    const newGain = yToGain(clientY);
-    onUpdateBandGain(selectedBandIndex, newGain);
+  const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!isDragging) return;
+    const target = getBandAndGainFromPointer(e.clientX, e.clientY);
+    if (target && selectedBandIndex !== null) {
+      onUpdateBandGain(selectedBandIndex, target.gain);
+    }
   };
 
-  const handlePointerUp = () => {
+  const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setIsDragging(false);
   };
 
@@ -163,20 +187,24 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
     }
   };
 
-  const selectedBand = bands[selectedBandIndex] || bands[0];
+  // Concise label for mobile so labels never overlap
+  const formatBandLabel = (label: string) => {
+    if (!isMobile) return label;
+    return label.replace(' Hz', '').replace(' kHz', 'k');
+  };
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto bg-[#09090C] text-[#F0EFEA] p-4 md:p-6 lg:p-8 space-y-6">
+    <div className="flex-1 flex flex-col overflow-y-auto bg-[#09090C] text-[#F0EFEA] p-3 sm:p-5 md:p-6 lg:p-8 space-y-4 sm:space-y-5">
       {/* Header and Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#454450] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b-2 border-[#454450] pb-3 sm:pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 ${isEnabled ? 'bg-[#D7FF3F]' : 'bg-[#454450]'}`}></span>
-            <h2 className="font-['Archivo_Black'] text-2xl md:text-3xl tracking-tight text-[#F0EFEA]">
-              10-BAND GRAPHIC EQUALIZER
+            <span className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isEnabled ? 'bg-[#D7FF3F]' : 'bg-[#454450]'}`}></span>
+            <h2 className="font-['Archivo_Black'] text-xl sm:text-2xl md:text-3xl tracking-tight text-[#F0EFEA]">
+              10-BAND PARAMETRIC EQ
             </h2>
           </div>
-          <div className="font-['IBM_Plex_Mono'] text-xs text-[#A3A1AD] mt-1">
+          <div className="font-['IBM_Plex_Mono'] text-[10px] sm:text-xs text-[#A3A1AD] mt-1">
             BIQUAD FILTER CHAIN // REAL-TIME WEB AUDIO PROCESSING
           </div>
         </div>
@@ -185,85 +213,100 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={onToggleEnabled}
-            className={`flex items-center gap-2 px-3 py-2 font-['Space_Grotesk'] text-xs font-bold uppercase border transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 font-['Space_Grotesk'] text-xs font-bold uppercase border transition-all ${
               isEnabled
                 ? 'bg-[#D7FF3F] text-black border-[#D7FF3F] shadow-[2px_2px_0px_0px_#454450]'
                 : 'bg-[#13131A] text-[#A3A1AD] border-[#454450] hover:text-[#F0EFEA]'
             }`}
             aria-pressed={isEnabled}
           >
-            <Power className="w-4 h-4" />
+            <Power className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{isEnabled ? 'EQ ENABLED' : 'EQ BYPASSED'}</span>
           </button>
 
           <button
             onClick={onReset}
-            className="flex items-center gap-2 px-3 py-2 bg-[#13131A] text-[#F0EFEA] font-['Space_Grotesk'] text-xs font-bold uppercase border border-[#454450] hover:border-[#FF5A63] hover:text-[#FF5A63] transition-colors"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-[#13131A] text-[#F0EFEA] font-['Space_Grotesk'] text-xs font-bold uppercase border border-[#454450] hover:border-[#FF5A63] hover:text-[#FF5A63] transition-colors"
             title="Reset to Flat curve (0 dB)"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>RESET</span>
           </button>
-        </div>
-      </div>
-
-      {/* Selected Band Real-time Telemetry (PRD 10.2: Tampilkan nilai gain per band saat node dipilih) */}
-      <div className="p-3 bg-[#13131A] border-2 border-[#454450] flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <div className="font-['IBM_Plex_Mono'] text-xs text-[#A3A1AD]">
-            ACTIVE BAND #{selectedBandIndex + 1}:
-          </div>
-          <div className="font-['Archivo_Black'] text-base text-[#D7FF3F]">
-            {selectedBand.label}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="font-['IBM_Plex_Mono'] text-xs">
-            <span className="text-[#A3A1AD] mr-2">GAIN:</span>
-            <span
-              className={`font-bold px-2 py-0.5 border ${
-                selectedBand.gain > 0
-                  ? 'bg-[#09090C] text-[#D7FF3F] border-[#D7FF3F]'
-                  : selectedBand.gain < 0
-                  ? 'bg-[#09090C] text-[#FF5A63] border-[#FF5A63]'
-                  : 'bg-[#09090C] text-[#F0EFEA] border-[#454450]'
-              }`}
-            >
-              {selectedBand.gain > 0 ? `+${selectedBand.gain.toFixed(1)} dB` : `${selectedBand.gain.toFixed(1)} dB`}
-            </span>
-          </div>
-
-          <div className="text-[10px] font-['IBM_Plex_Mono'] text-[#A3A1AD] hidden md:block">
-            DRAG NODE OR USE KEYBOARD ARROW UP/DOWN (±0.5 dB)
-          </div>
         </div>
       </div>
 
       {/* 10-BAND INTERACTIVE RESPONSIVE GRAPH (PRD 10.1, 10.2, 10.3) */}
       <div
         ref={containerRef}
-        className="relative border-2 border-[#454450] bg-[#13131A] overflow-hidden select-none"
-        style={{ height: `${graphHeight}px` }}
+        className="relative border-2 border-[#454450] bg-[#13131A] overflow-hidden select-none shrink-0 w-full"
+        style={{ height: `${graphHeight}px`, minHeight: `${graphHeight}px` }}
       >
-        {/* Background Visualizer Canvas */}
-        <canvas
-          ref={canvasRef}
-          width={containerWidth}
-          height={graphHeight}
-          className="absolute inset-0 pointer-events-none opacity-40"
-        />
+        {/* Subtle grid pattern for precision brutalist industrial aesthetic */}
+        <div className="absolute inset-0 pointer-events-none opacity-20 bg-[linear-gradient(to_right,#454450_1px,transparent_1px),linear-gradient(to_bottom,#454450_1px,transparent_1px)] bg-[size:24px_24px]" />
 
-        {/* SVG Frequency Response Graph */}
+        {/* SVG Frequency Response Graph with Pure Ease-In/Out Idle Motion & Deterministic Drag */}
         <svg
+          ref={svgRef}
           width="100%"
           height={graphHeight}
           viewBox={`0 0 ${containerWidth} ${graphHeight}`}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-          className="relative z-10 cursor-crosshair touch-none"
+          onPointerDown={handleSvgPointerDown}
+          onPointerMove={handleSvgPointerMove}
+          onPointerUp={handleSvgPointerUp}
+          onPointerCancel={handleSvgPointerUp}
+          className="relative z-10 cursor-crosshair touch-none select-none block w-full h-full"
         >
+          <defs>
+            {/* Smooth Ease-in-out breathing keyframes for resting frequency control nodes */}
+            <style>
+              {`
+                @keyframes eqNodeBreath {
+                  0%, 100% {
+                    transform: scale(1);
+                    opacity: 0.9;
+                  }
+                  50% {
+                    transform: scale(1.18);
+                    opacity: 1;
+                  }
+                }
+                @keyframes eqHaloPulse {
+                  0%, 100% {
+                    transform: scale(0.92);
+                    stroke-opacity: 0.35;
+                  }
+                  50% {
+                    transform: scale(1.16);
+                    stroke-opacity: 0.95;
+                  }
+                }
+                .eq-node-idle {
+                  transform-origin: center;
+                  animation: eqNodeBreath 2.4s ease-in-out infinite;
+                  transition: transform 0.2s ease-in-out, fill 0.2s ease-in-out;
+                }
+                .eq-node-active {
+                  transform-origin: center;
+                  animation: none !important;
+                  transition: transform 0.1s ease-out;
+                }
+                .eq-halo-idle {
+                  transform-origin: center;
+                  animation: eqHaloPulse 2s ease-in-out infinite;
+                }
+                .eq-halo-active {
+                  transform-origin: center;
+                  animation: none !important;
+                }
+              `}
+            </style>
+
+            <linearGradient id="eqGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#D7FF3F" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#D7FF3F" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+
           {/* Horizontal Grid lines (-12dB, -6dB, 0dB, +6dB, +12dB) */}
           {[-12, -6, 0, 6, 12].map((db) => {
             const y = getNodeCoordinates(0, db).y;
@@ -277,14 +320,14 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
                   stroke={db === 0 ? '#D7FF3F' : '#454450'}
                   strokeWidth={db === 0 ? 1.5 : 1}
                   strokeDasharray={db === 0 ? undefined : '4 4'}
-                  opacity={db === 0 ? 0.6 : 0.3}
+                  opacity={db === 0 ? 0.7 : 0.35}
                 />
                 <text
-                  x={paddingX - 8}
-                  y={y + 4}
+                  x={paddingX - 5}
+                  y={y + 3.5}
                   textAnchor="end"
-                  fill="#A3A1AD"
-                  fontSize="10"
+                  fill={db === 0 ? '#D7FF3F' : '#A3A1AD'}
+                  fontSize={isMobile ? '8.5' : '10'}
                   fontFamily="IBM Plex Mono, monospace"
                 >
                   {db > 0 ? `+${db}` : db}
@@ -300,9 +343,9 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
               <line
                 key={band.frequency}
                 x1={x}
-                y1={paddingY}
+                y1={paddingTop}
                 x2={x}
-                y2={graphHeight - paddingY}
+                y2={paddingTop + usableHeight}
                 stroke="#454450"
                 strokeWidth="1"
                 strokeDasharray="2 4"
@@ -316,17 +359,9 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
             <path
               d={`${pathD} L ${points[points.length - 1].x} ${zeroY} L ${points[0].x} ${zeroY} Z`}
               fill={isEnabled ? 'url(#eqGradient)' : 'rgba(69, 68, 80, 0.1)'}
-              opacity="0.4"
+              opacity="0.45"
             />
           )}
-
-          {/* Gradient Definition */}
-          <defs>
-            <linearGradient id="eqGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#D7FF3F" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#D7FF3F" stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
 
           {/* Frequency Curve Outline */}
           {pathD && (
@@ -334,14 +369,17 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
               d={pathD}
               fill="none"
               stroke={isEnabled ? '#D7FF3F' : '#454450'}
-              strokeWidth="3"
+              strokeWidth={isMobile ? '2.5' : '3'}
             />
           )}
 
-          {/* Interactive 10 Band Nodes */}
+          {/* Interactive 10 Band Columns and Frequency Control Points */}
           {bands.map((band, idx) => {
             const { x, y } = getNodeCoordinates(idx, isEnabled ? band.gain : 0);
             const isSelected = selectedBandIndex === idx;
+            const columnWidth = usableWidth / (bands.length - 1);
+            const nodeSize = isMobile ? 12 : 14;
+            const haloSize = isMobile ? 22 : 26;
 
             return (
               <g
@@ -354,49 +392,94 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
                 aria-valuemax={12}
                 onKeyDown={(e) => handleKeyDown(e, idx)}
                 onFocus={() => setSelectedBandIndex(idx)}
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  handlePointerDown(idx);
-                }}
-                className="cursor-pointer outline-none focus:ring-2 focus:ring-[#D7FF3F]"
+                className="cursor-pointer outline-none"
               >
-                {/* Node Outer Halo on Selection */}
+                {/* Generous touch hit column (PRD 10.3: Easily touchable on mobile) */}
+                <rect
+                  x={x - columnWidth / 2}
+                  y={paddingTop}
+                  width={columnWidth}
+                  height={usableHeight + 14}
+                  fill="transparent"
+                />
+
+                {/* Selected Band Focus Halo: Ease-in/out breath when idle, crisp solid lock when dragging */}
                 {isSelected && (
                   <rect
-                    x={x - 12}
-                    y={y - 12}
-                    width={24}
-                    height={24}
+                    x={x - haloSize / 2}
+                    y={y - haloSize / 2}
+                    width={haloSize}
+                    height={haloSize}
                     fill="none"
                     stroke="#D7FF3F"
-                    strokeWidth="1"
-                    strokeDasharray="2 2"
+                    strokeWidth="1.5"
+                    strokeDasharray="3 3"
+                    className={isDragging ? 'eq-halo-active' : 'eq-halo-idle'}
+                    style={{ transformBox: 'fill-box' }}
                   />
                 )}
 
-                {/* Node Shape: brutalist square */}
+                {/* Node Shape: brutalist square with ease-in/out motion when resting, direct tracking when clicked */}
                 <rect
-                  x={x - 6}
-                  y={y - 6}
-                  width={12}
-                  height={12}
+                  x={x - nodeSize / 2}
+                  y={y - nodeSize / 2}
+                  width={nodeSize}
+                  height={nodeSize}
                   fill={isSelected ? '#D7FF3F' : isEnabled ? '#F0EFEA' : '#454450'}
                   stroke="#09090C"
                   strokeWidth="2"
-                  className="transition-transform hover:scale-125"
+                  className={isSelected && isDragging ? 'eq-node-active scale-125' : 'eq-node-idle'}
+                  style={{ transformBox: 'fill-box' }}
                 />
 
-                {/* Bottom Frequency Text Label */}
+                {/* Center dot on selected node */}
+                {isSelected && (
+                  <rect
+                    x={x - 1.5}
+                    y={y - 1.5}
+                    width={3}
+                    height={3}
+                    fill="#09090C"
+                  />
+                )}
+
+                {/* Floating gain indicator directly above selected node (PRD 10.2) */}
+                {isSelected && (
+                  <g pointerEvents="none">
+                    <rect
+                      x={x - 22}
+                      y={Math.max(paddingTop - 12, y - (isMobile ? 24 : 26))}
+                      width={44}
+                      height={16}
+                      fill="#09090C"
+                      stroke="#D7FF3F"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={x}
+                      y={Math.max(paddingTop - 12, y - (isMobile ? 24 : 26)) + 11.5}
+                      textAnchor="middle"
+                      fill="#D7FF3F"
+                      fontSize={isMobile ? '8.5' : '9.5'}
+                      fontFamily="IBM Plex Mono, monospace"
+                      fontWeight="bold"
+                    >
+                      {band.gain > 0 ? `+${band.gain.toFixed(1)}` : band.gain.toFixed(1)}dB
+                    </text>
+                  </g>
+                )}
+
+                {/* Frequency Text Label at Bottom - Proportional & formatted to never collide */}
                 <text
                   x={x}
-                  y={graphHeight - 10}
+                  y={graphHeight - (isMobile ? 10 : 12)}
                   textAnchor="middle"
                   fill={isSelected ? '#D7FF3F' : '#A3A1AD'}
-                  fontSize="10"
+                  fontSize={isMobile ? '9' : '10'}
                   fontFamily="IBM Plex Mono, monospace"
                   fontWeight={isSelected ? 'bold' : 'normal'}
                 >
-                  {band.label}
+                  {formatBandLabel(band.label)}
                 </text>
               </g>
             );
@@ -404,28 +487,28 @@ export const EqualizerView: React.FC<EqualizerViewProps> = ({
         </svg>
       </div>
 
-      {/* PRESETS BAR (PRD 10.2) */}
+      {/* PRESETS BAR (PRD 10.2: 3-column grid on mobile for perfect screen fitting) */}
       <div className="space-y-2">
-        <div className="font-['IBM_Plex_Mono'] text-xs text-[#A3A1AD] uppercase flex items-center justify-between">
+        <div className="font-['IBM_Plex_Mono'] text-[11px] sm:text-xs text-[#A3A1AD] uppercase flex items-center justify-between">
           <span>FACTORY PRESETS</span>
           <span>{EQ_PRESETS.length} PROFILES</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-5 gap-1.5 sm:gap-2">
           {EQ_PRESETS.map((preset) => {
             const isCurrentPreset = activePreset === preset.name;
             return (
               <button
                 key={preset.name}
                 onClick={() => onApplyPreset(preset.name, preset.gains)}
-                className={`flex items-center justify-between px-3 py-2 border font-['Space_Grotesk'] text-xs font-bold transition-all text-left ${
+                className={`flex items-center justify-between px-2 sm:px-3 py-1.5 sm:py-2 border font-['Space_Grotesk'] text-[11px] sm:text-xs font-bold transition-all text-left ${
                   isCurrentPreset
                     ? 'bg-[#D7FF3F] text-black border-[#D7FF3F] shadow-[2px_2px_0px_0px_#454450]'
                     : 'bg-[#13131A] text-[#F0EFEA] border-[#454450] hover:border-[#D7FF3F]'
                 }`}
               >
                 <span className="truncate">{preset.name}</span>
-                {isCurrentPreset && <Check className="w-3.5 h-3.5 shrink-0" />}
+                {isCurrentPreset && <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 ml-1" />}
               </button>
             );
           })}

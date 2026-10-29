@@ -27,6 +27,7 @@ import {
 import { Track, QueueItem, RepeatMode, LyricData } from '../types/music';
 import { formatDuration, formatBytes } from '../utils/formatters';
 import { getActiveLyricIndex } from '../utils/lrcParser';
+import { getTrackArtwork, generateBrutalistArtwork } from '../utils/artworkCache';
 
 interface NowPlayingViewProps {
   currentTrack: Track | null;
@@ -43,6 +44,7 @@ interface NowPlayingViewProps {
   onNextTrack: () => void;
   onPrevTrack: () => void;
   onSeekStep: (seconds: number) => void;
+  onSeekTo?: (seconds: number) => void;
   onToggleRepeat: () => void;
   onToggleShuffle: () => void;
   onVolumeStep: (delta: number) => void;
@@ -51,7 +53,6 @@ interface NowPlayingViewProps {
   onMoveQueueItem: (fromIdx: number, toIdx: number) => void;
   onSelectQueueItem: (index: number) => void;
   onUpdateLyricOffset: (trackId: string, deltaMs: number, reset?: boolean) => void;
-  onOpenAttachLyrics: (track: Track) => void;
 }
 
 export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
@@ -69,6 +70,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   onNextTrack,
   onPrevTrack,
   onSeekStep,
+  onSeekTo,
   onToggleRepeat,
   onToggleShuffle,
   onVolumeStep,
@@ -77,11 +79,20 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   onMoveQueueItem,
   onSelectQueueItem,
   onUpdateLyricOffset,
-  onOpenAttachLyrics,
 }) => {
   const [showLyrics, setShowLyrics] = useState(false);
   const activeLyricRef = useRef<HTMLDivElement | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const [artworkSrc, setArtworkSrc] = useState<string>('');
+
+  useEffect(() => {
+    if (currentTrack) {
+      setArtworkSrc(getTrackArtwork(currentTrack));
+    }
+  }, [currentTrack?.id, currentTrack?.artworkUrl]);
 
   const activeLyricIndex =
     currentTrack?.lyrics?.type === 'lrc'
@@ -121,8 +132,73 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   }
 
   const effectiveDuration = duration > 0 ? duration : currentTrack.duration;
-  const progressRatio = effectiveDuration > 0 ? Math.min(1, currentTime / effectiveDuration) : 0;
   const currentOffset = currentTrack.lyrics?.offsetMs || 0;
+
+  const displayTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
+  const currentRatio = effectiveDuration > 0 ? Math.min(1, Math.max(0, displayTime / effectiveDuration)) : 0;
+
+  const calculateSeekTime = (clientX: number): number => {
+    if (!progressBarRef.current || effectiveDuration <= 0) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * effectiveDuration;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Safe fallback if pointer capture is unsupported or synthetic
+    }
+    setIsScrubbing(true);
+    const target = calculateSeekTime(e.clientX);
+    setScrubTime(target);
+    if (onSeekTo) {
+      onSeekTo(target);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbing) return;
+    const target = calculateSeekTime(e.clientX);
+    setScrubTime(target);
+    if (onSeekTo) {
+      onSeekTo(target);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+    if (isScrubbing && scrubTime !== null && onSeekTo) {
+      onSeekTo(scrubTime);
+    }
+    setIsScrubbing(false);
+    setScrubTime(null);
+  };
+
+  const handleClickScrubber = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = calculateSeekTime(e.clientX);
+    setScrubTime(target);
+    if (onSeekTo) {
+      onSeekTo(target);
+    }
+  };
+
+  const handleKeyDownScrubber = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      onSeekStep(-5);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      onSeekStep(5);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-[#09090C] text-[#F0EFEA] p-4 md:p-6 lg:p-8 space-y-6">
@@ -173,29 +249,68 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
           }`}
         >
           {/* Artwork Container */}
-          <div className="relative border-2 border-[#454450] bg-[#13131A] aspect-square w-full max-w-[420px] mx-auto overflow-hidden group">
-            {currentTrack.artworkUrl ? (
-              <img
-                src={currentTrack.artworkUrl}
-                alt={`${currentTrack.title} artwork`}
-                className="w-full h-full object-cover select-none"
+          <div
+            className={`relative border-2 ${
+              isPlaying
+                ? 'border-[#D7FF3F] shadow-[4px_4px_0px_0px_rgba(215,255,63,0.35)]'
+                : 'border-[#454450]'
+            } bg-[#13131A] aspect-square w-full max-w-[420px] mx-auto overflow-hidden group transition-all duration-200`}
+          >
+            {/* Real Artwork Display (from embedded metadata or local cached artwork) */}
+            <img
+              src={artworkSrc || getTrackArtwork(currentTrack)}
+              alt={`${currentTrack.title} artwork`}
+              className={`w-full h-full object-cover select-none transition-transform duration-500 ${
+                isPlaying ? 'scale-[1.02]' : 'scale-100 opacity-90'
+              }`}
+              onError={() => {
+                setArtworkSrc(
+                  generateBrutalistArtwork(
+                    currentTrack.title,
+                    currentTrack.artist,
+                    currentTrack.format,
+                    currentTrack.id
+                  )
+                );
+              }}
+            />
+
+            {/* Playback Status Badge (Live metadata / cache feedback) */}
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 bg-black/85 backdrop-blur-sm border border-[#454450] text-[10px] font-['IBM_Plex_Mono'] font-bold select-none">
+              <span
+                className={`w-2 h-2 ${
+                  isPlaying
+                    ? 'bg-[#D7FF3F] animate-pulse shadow-[0_0_8px_#D7FF3F]'
+                    : 'bg-[#A3A1AD]'
+                }`}
               />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-[#13131A] text-center border-2 border-dashed border-[#454450]">
-                <FileAudio className="w-20 h-20 text-[#454450] mb-4" />
-                <div className="font-['Archivo_Black'] text-lg text-[#F0EFEA] tracking-wider">
-                  RAW LOCAL AUDIO
+              <span className={isPlaying ? 'text-[#D7FF3F]' : 'text-[#A3A1AD]'}>
+                {isPlaying ? 'PLAYING // ACTIVE' : 'PAUSED // STANDBY'}
+              </span>
+            </div>
+
+            {/* Audio Stream Visual Indicator when playing */}
+            {isPlaying && (
+              <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 px-2 py-1 bg-black/85 backdrop-blur-sm border border-[#454450]">
+                <div className="flex items-end gap-0.5 h-3">
+                  <span className="w-1 bg-[#D7FF3F] animate-[bounce_0.8s_infinite_100ms] h-2.5" />
+                  <span className="w-1 bg-[#D7FF3F] animate-[bounce_0.8s_infinite_300ms] h-3.5" />
+                  <span className="w-1 bg-[#D7FF3F] animate-[bounce_0.8s_infinite_200ms] h-2" />
                 </div>
-                <div className="font-['IBM_Plex_Mono'] text-xs text-[#A3A1AD] mt-1">
-                  {currentTrack.format} // NO EMBEDDED ART
-                </div>
+                <span className="text-[9px] font-['IBM_Plex_Mono'] text-[#F0EFEA] uppercase font-bold tracking-wider">
+                  METADATA CACHE OK
+                </span>
               </div>
             )}
 
             {/* Floating corner lyric indicator */}
             <button
               onClick={() => setShowLyrics(!showLyrics)}
-              className="absolute top-3 right-3 bg-black/90 text-[#D7FF3F] border border-[#454450] p-2 hover:bg-[#D7FF3F] hover:text-black transition-colors"
+              className={`absolute top-3 right-3 z-10 border p-2 transition-colors ${
+                showLyrics
+                  ? 'bg-[#D7FF3F] text-black border-[#D7FF3F]'
+                  : 'bg-black/85 text-[#F0EFEA] border-[#454450] hover:border-[#D7FF3F] hover:text-[#D7FF3F]'
+              }`}
               title="Toggle Lyrics Panel"
               aria-label="Toggle Lyrics Panel"
             >
@@ -301,17 +416,14 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
                   </pre>
                 )
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
                   <FileText className="w-10 h-10 text-[#454450]" />
-                  <div className="font-['Space_Grotesk'] text-sm text-[#A3A1AD]">
+                  <div className="font-['Space_Grotesk'] text-sm text-[#A3A1AD] font-semibold">
                     TIDAK ADA LIRIK DITEMUKAN UNTUK LAGU INI
                   </div>
-                  <button
-                    onClick={() => onOpenAttachLyrics(currentTrack)}
-                    className="px-3 py-2 bg-[#09090C] border border-[#454450] hover:border-[#D7FF3F] text-[#D7FF3F] font-['Space_Grotesk'] text-xs font-bold uppercase transition-colors"
-                  >
-                    + TAUTKAN FILE .LRC / .TXT
-                  </button>
+                  <div className="font-['IBM_Plex_Mono'] text-xs text-[#454450]">
+                    [OFFLINE METADATA // NO EMBEDDED LYRICS]
+                  </div>
                 </div>
               )}
             </div>
@@ -319,30 +431,59 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
         )}
       </div>
 
-      {/* STATIC NON-INTERACTIVE PROGRESS INDICATOR (PRD 7.4: NO SLIDERS) */}
+      {/* INTERACTIVE PLAYBACK SCRUBBER SLIDER */}
       <div className="border-2 border-[#454450] p-4 bg-[#13131A] space-y-4">
         <div>
-          <div className="flex justify-between items-center font-['IBM_Plex_Mono'] text-xs mb-2">
-            <span className="text-[#D7FF3F] font-bold">{formatDuration(currentTime)}</span>
+          <div className="flex justify-between items-center font-['IBM_Plex_Mono'] text-xs mb-2 select-none">
+            <span className="text-[#D7FF3F] font-bold">{formatDuration(displayTime)}</span>
             <span className="text-[#A3A1AD] uppercase text-[10px]">
-              STATIC INDICATOR
+              {isScrubbing ? 'SCRUBBING // SEEK' : 'TRACK PROGRESS'}
             </span>
             <span className="text-[#F0EFEA] font-bold">{formatDuration(effectiveDuration)}</span>
           </div>
 
-          {/* Static progress bar without slider / scrubber */}
+          {/* Interactive Brutalist Scrubber Slider */}
           <div
-            className="h-2 w-full bg-[#09090C] border border-[#454450] overflow-hidden"
-            role="progressbar"
-            aria-valuenow={Math.round(currentTime)}
+            ref={progressBarRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onClick={handleClickScrubber}
+            onKeyDown={handleKeyDownScrubber}
+            tabIndex={0}
+            role="slider"
+            aria-valuenow={Math.round(displayTime)}
             aria-valuemin={0}
             aria-valuemax={Math.round(effectiveDuration)}
-            aria-label="Playback Progress"
+            aria-label="Playback Progress Scrubber"
+            className="group relative h-3.5 sm:h-4 w-full bg-[#09090C] border-2 border-[#454450] hover:border-[#D7FF3F] cursor-pointer touch-none select-none flex items-center transition-colors"
           >
+            {/* Progress Fill Track */}
             <div
-              className="h-full bg-[#D7FF3F] transition-[width] duration-150 ease-linear"
-              style={{ width: `${progressRatio * 100}%` }}
+              className="h-full bg-[#D7FF3F] transition-[width] duration-75 ease-out pointer-events-none"
+              style={{ width: `${currentRatio * 100}%` }}
             />
+
+            {/* Brutalist Scrubber Handle/Thumb */}
+            <div
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-6 bg-[#D7FF3F] border-2 border-[#09090C] shadow-[1px_1px_0px_0px_#454450] pointer-events-none transition-transform ${
+                isScrubbing ? 'scale-115 bg-[#F0EFEA]' : 'group-hover:scale-110'
+              }`}
+              style={{ left: `${currentRatio * 100}%` }}
+            >
+              <div className="w-0.5 h-3 bg-[#09090C] mx-auto mt-1" />
+            </div>
+
+            {/* Scrub Tooltip on hover/drag */}
+            {isScrubbing && (
+              <div
+                className="absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 bg-[#09090C] border border-[#D7FF3F] text-[#D7FF3F] font-['IBM_Plex_Mono'] text-[10px] font-bold pointer-events-none z-20 whitespace-nowrap"
+                style={{ left: `${currentRatio * 100}%` }}
+              >
+                {formatDuration(displayTime)}
+              </div>
+            )}
           </div>
         </div>
 
